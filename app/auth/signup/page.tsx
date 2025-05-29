@@ -10,8 +10,9 @@ import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Loader2, Package, ArrowLeft, CheckCircle, RefreshCw, Clock } from "lucide-react"
+import { Loader2, Package, ArrowLeft, CheckCircle, Clock } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
+import { EmailVerificationHelp } from "./email-verification-help"
 
 interface SignupForm {
   email: string
@@ -343,10 +344,14 @@ export default function SignUp() {
                   maxLength={6}
                   required
                 />
-                <p className="text-xs text-gray-500">
-                  A verification code has been sent to {form.email || userStatus?.email}
-                </p>
               </div>
+
+              <EmailVerificationHelp
+                email={form.email || userStatus?.email || ""}
+                onResend={handleResendOTP}
+                resendLoading={resendLoading}
+                canResend={resendCooldown === 0}
+              />
 
               {errors.length > 0 && (
                 <Alert variant="destructive">
@@ -365,30 +370,7 @@ export default function SignUp() {
                 Verify Email
               </Button>
 
-              <div className="text-center text-sm space-y-2">
-                <p>
-                  Didn&apos;t receive the code?{" "}
-                  <button
-                    type="button"
-                    className="text-blue-600 hover:underline disabled:text-gray-400 disabled:no-underline"
-                    onClick={handleResendOTP}
-                    disabled={resendLoading || resendCooldown > 0}
-                  >
-                    {resendLoading ? (
-                      <span className="inline-flex items-center">
-                        <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-                        Sending...
-                      </span>
-                    ) : resendCooldown > 0 ? (
-                      `Resend in ${resendCooldown}s`
-                    ) : (
-                      <span className="inline-flex items-center">
-                        <RefreshCw className="mr-1 h-3 w-3" />
-                        Resend
-                      </span>
-                    )}
-                  </button>
-                </p>
+              <div className="text-center text-sm">
                 <p>
                   <button type="button" className="text-blue-600 hover:underline" onClick={() => setStep("form")}>
                     <ArrowLeft className="mr-1 h-3 w-3 inline" />
