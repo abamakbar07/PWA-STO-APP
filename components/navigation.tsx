@@ -25,6 +25,7 @@ import {
   LogOut,
   User,
   UserPlus,
+  Mail,
 } from "lucide-react"
 
 export function Navigation() {
@@ -42,6 +43,7 @@ export function Navigation() {
           { name: "Upload SOH", href: "/upload", icon: Upload },
           { name: "User Management", href: "/users", icon: Users },
           { name: "Pending Users", href: "/users/pending", icon: UserPlus },
+          { name: "Email Test", href: "/email-test", icon: Mail },
         ]
       : []),
     { name: "Forms", href: "/forms", icon: FileText },

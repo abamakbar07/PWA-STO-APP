@@ -22,7 +22,7 @@ export class PendingUserService {
     password: string
     role: "SUPER_USER" | "ADMIN_USER"
     adminEmail?: string
-  }): Promise<{ pendingUser: PendingUser; otpCode: string }> {
+  }): Promise<{ pendingUser: PendingUser; otpCode: string; emailSent: boolean }> {
     const { email, name, password, role, adminEmail } = userData
 
     if (!sql) {
@@ -71,12 +71,25 @@ export class PendingUserService {
     const otpCode = await OTPService.createOTP(email, "SIGNUP")
 
     // Send OTP via email
-    await EmailService.sendOTP(email, otpCode, "Account Verification")
+    const emailResult = await EmailService.sendOTP(email, name, otpCode, "Account Verification")
 
-    return { pendingUser, otpCode }
+    if (!emailResult.success) {
+      console.error("Failed to send OTP email:", emailResult.error)
+      // Don't throw error, but log it and continue
+      // The user can still use the resend functionality
+    }
+
+    return {
+      pendingUser,
+      otpCode,
+      emailSent: emailResult.success,
+    }
   }
 
-  static async verifyOTP(email: string, otpCode: string): Promise<{ verified: boolean; user?: any }> {
+  static async verifyOTP(
+    email: string,
+    otpCode: string,
+  ): Promise<{ verified: boolean; user?: any; emailSent?: boolean }> {
     if (!sql) {
       throw new Error("Database not available")
     }
@@ -103,7 +116,7 @@ export class PendingUserService {
     if (updatedPendingUser.admin_email) {
       // Send approval request to admin
       const approvalLink = `${process.env.NEXTAUTH_URL || "http://localhost:3000"}/api/auth/approve?token=${updatedPendingUser.id}`
-      await EmailService.sendAdminApprovalRequest(
+      const emailResult = await EmailService.sendAdminApprovalRequest(
         updatedPendingUser.admin_email,
         updatedPendingUser.email,
         updatedPendingUser.name,
@@ -112,6 +125,7 @@ export class PendingUserService {
 
       return {
         verified: true,
+        emailSent: emailResult.success,
         user: {
           email: updatedPendingUser.email,
           name: updatedPendingUser.name,
@@ -125,6 +139,7 @@ export class PendingUserService {
 
       return {
         verified: true,
+        emailSent: true, // Welcome email is sent in approvePendingUser
         user: {
           email: approvedUser.email,
           name: approvedUser.name,
@@ -176,7 +191,12 @@ export class PendingUserService {
       `
 
       // Send welcome email
-      await EmailService.sendWelcomeEmail(user.email, user.name)
+      const emailResult = await EmailService.sendWelcomeEmail(user.email, user.name)
+
+      if (!emailResult.success) {
+        console.error("Failed to send welcome email:", emailResult.error)
+        // Don't fail the approval process if email fails
+      }
 
       return user
     } catch (error) {
@@ -213,7 +233,7 @@ export class PendingUserService {
     return pendingUser || null
   }
 
-  static async resendOTP(email: string): Promise<string> {
+  static async resendOTP(email: string): Promise<{ otpCode: string; emailSent: boolean }> {
     if (!sql) {
       throw new Error("Database not available")
     }
@@ -234,9 +254,12 @@ export class PendingUserService {
     const otpCode = await OTPService.createOTP(email, "SIGNUP")
 
     // Send OTP via email
-    await EmailService.sendOTP(email, otpCode, "Account Verification")
+    const emailResult = await EmailService.sendOTP(email, pendingUser.name, otpCode, "Account Verification")
 
-    return otpCode
+    return {
+      otpCode,
+      emailSent: emailResult.success,
+    }
   }
 
   static async cleanupExpiredPendingUsers(): Promise<void> {
