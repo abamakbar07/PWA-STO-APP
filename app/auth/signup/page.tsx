@@ -2,15 +2,15 @@
 
 import type React from "react"
 
-import { useState } from "react"
-import { useRouter } from "next/navigation"
+import { useState, useEffect } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Loader2, Package, ArrowLeft, CheckCircle } from "lucide-react"
+import { Loader2, Package, ArrowLeft, CheckCircle, RefreshCw, Clock } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 
 interface SignupForm {
@@ -31,10 +31,31 @@ export default function SignUp() {
   })
   const [errors, setErrors] = useState<string[]>([])
   const [loading, setLoading] = useState(false)
-  const [step, setStep] = useState<"form" | "otp" | "success">("form")
+  const [step, setStep] = useState<"form" | "otp" | "success" | "pending_approval">("form")
   const [otp, setOtp] = useState("")
+  const [resendLoading, setResendLoading] = useState(false)
+  const [resendCooldown, setResendCooldown] = useState(0)
+  const [userStatus, setUserStatus] = useState<any>(null)
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { toast } = useToast()
+
+  // Check if we should redirect to OTP verification on page load
+  useEffect(() => {
+    const email = searchParams.get("email")
+    if (email) {
+      setForm((prev) => ({ ...prev, email }))
+      setStep("otp")
+    }
+  }, [searchParams])
+
+  // Resend cooldown timer
+  useEffect(() => {
+    if (resendCooldown > 0) {
+      const timer = setTimeout(() => setResendCooldown(resendCooldown - 1), 1000)
+      return () => clearTimeout(timer)
+    }
+  }, [resendCooldown])
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target
@@ -93,12 +114,22 @@ export default function SignUp() {
         return
       }
 
-      toast({
-        title: "Verification code sent",
-        description: "Please check your email for the verification code",
-      })
+      setUserStatus(data.data)
 
-      setStep("otp")
+      // Handle different response statuses
+      if (data.data.redirect_to_otp || data.data.status === "otp_sent") {
+        toast({
+          title: "Verification code sent",
+          description: "Please check your email for the verification code",
+        })
+        setStep("otp")
+      } else if (data.data.status === "pending_admin_approval") {
+        toast({
+          title: "Account pending approval",
+          description: "Your email is verified and your account is pending admin approval",
+        })
+        setStep("pending_approval")
+      }
     } catch (error) {
       setErrors(["An error occurred during signup"])
     } finally {
@@ -137,16 +168,58 @@ export default function SignUp() {
         return
       }
 
-      toast({
-        title: "Email verified",
-        description: "Your account is pending admin approval",
-      })
+      setUserStatus(data.data)
 
-      setStep("success")
+      if (data.data.status === "approved") {
+        toast({
+          title: "Account activated!",
+          description: "Your account has been successfully activated. You can now sign in.",
+        })
+        setStep("success")
+      } else if (data.data.status === "pending_admin_approval") {
+        toast({
+          title: "Email verified",
+          description: "Your account is pending admin approval",
+        })
+        setStep("pending_approval")
+      }
     } catch (error) {
       setErrors(["An error occurred during verification"])
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleResendOTP = async () => {
+    setResendLoading(true)
+    setErrors([])
+
+    try {
+      const response = await fetch("/api/auth/resend-otp", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email: form.email,
+        }),
+      })
+
+      const data = await response.json()
+
+      if (response.ok) {
+        toast({
+          title: "Code resent",
+          description: "A new verification code has been sent to your email",
+        })
+        setResendCooldown(60) // 60 second cooldown
+      } else {
+        setErrors([data.error || "Failed to resend verification code"])
+      }
+    } catch (error) {
+      setErrors(["Failed to resend verification code"])
+    } finally {
+      setResendLoading(false)
     }
   }
 
@@ -161,7 +234,8 @@ export default function SignUp() {
           <CardDescription>
             {step === "form" && "Create a new account"}
             {step === "otp" && "Verify your email"}
-            {step === "success" && "Registration successful"}
+            {step === "success" && "Account activated"}
+            {step === "pending_approval" && "Pending approval"}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -196,7 +270,7 @@ export default function SignUp() {
                   id="password"
                   name="password"
                   type="password"
-                  placeholder="Create a password"
+                  placeholder="Create a password (min 8 characters)"
                   value={form.password}
                   onChange={handleChange}
                   required
@@ -263,12 +337,15 @@ export default function SignUp() {
                 <Input
                   id="otp"
                   name="otp"
-                  placeholder="Enter the 6-digit code sent to your email"
+                  placeholder="Enter the 6-digit code"
                   value={otp}
                   onChange={(e) => setOtp(e.target.value)}
+                  maxLength={6}
                   required
                 />
-                <p className="text-xs text-gray-500">A verification code has been sent to {form.email}</p>
+                <p className="text-xs text-gray-500">
+                  A verification code has been sent to {form.email || userStatus?.email}
+                </p>
               </div>
 
               {errors.length > 0 && (
@@ -288,25 +365,50 @@ export default function SignUp() {
                 Verify Email
               </Button>
 
-              <div className="text-center text-sm">
+              <div className="text-center text-sm space-y-2">
                 <p>
                   Didn&apos;t receive the code?{" "}
-                  <button type="button" className="text-blue-600 hover:underline">
-                    Resend
+                  <button
+                    type="button"
+                    className="text-blue-600 hover:underline disabled:text-gray-400 disabled:no-underline"
+                    onClick={handleResendOTP}
+                    disabled={resendLoading || resendCooldown > 0}
+                  >
+                    {resendLoading ? (
+                      <span className="inline-flex items-center">
+                        <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                        Sending...
+                      </span>
+                    ) : resendCooldown > 0 ? (
+                      `Resend in ${resendCooldown}s`
+                    ) : (
+                      <span className="inline-flex items-center">
+                        <RefreshCw className="mr-1 h-3 w-3" />
+                        Resend
+                      </span>
+                    )}
+                  </button>
+                </p>
+                <p>
+                  <button type="button" className="text-blue-600 hover:underline" onClick={() => setStep("form")}>
+                    <ArrowLeft className="mr-1 h-3 w-3 inline" />
+                    Back to signup
                   </button>
                 </p>
               </div>
             </form>
           )}
 
-          {step === "success" && (
+          {step === "pending_approval" && (
             <div className="space-y-6">
               <div className="flex flex-col items-center justify-center text-center">
-                <CheckCircle className="h-16 w-16 text-green-500 mb-4" />
-                <h3 className="text-xl font-medium">Registration Successful!</h3>
-                <p className="text-gray-600 mt-2">
-                  Your account has been created and is pending approval from the administrator.
-                </p>
+                <Clock className="h-16 w-16 text-yellow-500 mb-4" />
+                <h3 className="text-xl font-medium">Email Verified!</h3>
+                <p className="text-gray-600 mt-2">Your email has been successfully verified.</p>
+                <p className="text-gray-600 mt-2">Your account is now pending approval from the administrator.</p>
+                {userStatus?.admin_email && (
+                  <p className="text-sm text-gray-500 mt-2">Administrator: {userStatus.admin_email}</p>
+                )}
                 <p className="text-gray-600 mt-2">
                   You will receive an email notification once your account is approved.
                 </p>
@@ -315,6 +417,22 @@ export default function SignUp() {
               <Button onClick={() => router.push("/auth/signin")} className="w-full">
                 <ArrowLeft className="mr-2 h-4 w-4" />
                 Return to Sign In
+              </Button>
+            </div>
+          )}
+
+          {step === "success" && (
+            <div className="space-y-6">
+              <div className="flex flex-col items-center justify-center text-center">
+                <CheckCircle className="h-16 w-16 text-green-500 mb-4" />
+                <h3 className="text-xl font-medium">Account Activated!</h3>
+                <p className="text-gray-600 mt-2">Your account has been successfully activated.</p>
+                <p className="text-gray-600 mt-2">You can now sign in and start using STO Manager.</p>
+              </div>
+
+              <Button onClick={() => router.push("/auth/signin")} className="w-full">
+                <ArrowLeft className="mr-2 h-4 w-4" />
+                Go to Sign In
               </Button>
             </div>
           )}

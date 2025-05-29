@@ -13,28 +13,17 @@ export async function POST(request: NextRequest) {
     }
 
     // Verify OTP
-    const verified = await PendingUserService.verifyOTP(email, otp)
+    const result = await PendingUserService.verifyOTP(email, otp)
 
-    if (!verified) {
+    if (!result.verified) {
       return createErrorResponse("Invalid or expired verification code", 400, "INVALID_OTP")
     }
 
-    // Get pending user
-    const pendingUser = await PendingUserService.getPendingUserByEmail(email)
-
-    if (!pendingUser) {
-      return createErrorResponse("User not found", 404, "USER_NOT_FOUND")
-    }
-
     return createSuccessResponse(
-      {
-        email: pendingUser.email,
-        name: pendingUser.name,
-        admin_email: pendingUser.admin_email,
-        otp_verified: pendingUser.otp_verified,
-        admin_approved: pendingUser.admin_approved,
-      },
-      "Email verified successfully. Your account is pending admin approval.",
+      result.user,
+      result.user?.status === "approved"
+        ? "Email verified and account activated successfully!"
+        : "Email verified successfully. Your account is pending admin approval.",
     )
   } catch (error) {
     return handleApiError(error, "POST /api/auth/verify-otp")

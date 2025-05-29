@@ -25,6 +25,10 @@ export class PendingUserService {
   }): Promise<{ pendingUser: PendingUser; otpCode: string }> {
     const { email, name, password, role, adminEmail } = userData
 
+    if (!sql) {
+      throw new Error("Database not available")
+    }
+
     // Check if user already exists in users table
     const [existingUser] = await sql`
       SELECT id FROM users WHERE email = ${email}
@@ -34,9 +38,16 @@ export class PendingUserService {
       throw new Error("User with this email already exists")
     }
 
-    // Check if pending user already exists
+    // Clean up any expired pending users for this email
+    await sql`
+      DELETE FROM pending_users 
+      WHERE email = ${email} AND expires_at < NOW()
+    `
+
+    // Check if there's still a valid pending user
     const [existingPendingUser] = await sql`
-      SELECT id FROM pending_users WHERE email = ${email}
+      SELECT id FROM pending_users 
+      WHERE email = ${email} AND expires_at > NOW()
     `
 
     if (existingPendingUser) {
@@ -65,87 +76,135 @@ export class PendingUserService {
     return { pendingUser, otpCode }
   }
 
-  static async verifyOTP(email: string, otpCode: string): Promise<boolean> {
-    const verified = await OTPService.verifyOTP(email, otpCode, "SIGNUP")
-
-    if (verified) {
-      // Update pending user
-      await sql`
-        UPDATE pending_users
-        SET otp_verified = true
-        WHERE email = ${email}
-      `
-
-      // Get pending user
-      const [pendingUser] = await sql`
-        SELECT * FROM pending_users
-        WHERE email = ${email}
-      `
-
-      // If admin email is provided, send approval request
-      if (pendingUser && pendingUser.admin_email) {
-        const approvalLink = `${process.env.NEXTAUTH_URL}/api/auth/approve?token=${pendingUser.id}`
-        await EmailService.sendAdminApprovalRequest(
-          pendingUser.admin_email,
-          pendingUser.email,
-          pendingUser.name,
-          approvalLink,
-        )
-      } else if (pendingUser) {
-        // Auto-approve if no admin email
-        await this.approvePendingUser(pendingUser.id)
-      }
+  static async verifyOTP(email: string, otpCode: string): Promise<{ verified: boolean; user?: any }> {
+    if (!sql) {
+      throw new Error("Database not available")
     }
 
-    return verified
+    const verified = await OTPService.verifyOTP(email, otpCode, "SIGNUP")
+
+    if (!verified) {
+      return { verified: false }
+    }
+
+    // Update pending user to mark OTP as verified
+    const [updatedPendingUser] = await sql`
+      UPDATE pending_users
+      SET otp_verified = true
+      WHERE email = ${email} AND expires_at > NOW()
+      RETURNING *
+    `
+
+    if (!updatedPendingUser) {
+      throw new Error("Pending user not found or expired")
+    }
+
+    // Check if admin approval is required
+    if (updatedPendingUser.admin_email) {
+      // Send approval request to admin
+      const approvalLink = `${process.env.NEXTAUTH_URL || "http://localhost:3000"}/api/auth/approve?token=${updatedPendingUser.id}`
+      await EmailService.sendAdminApprovalRequest(
+        updatedPendingUser.admin_email,
+        updatedPendingUser.email,
+        updatedPendingUser.name,
+        approvalLink,
+      )
+
+      return {
+        verified: true,
+        user: {
+          email: updatedPendingUser.email,
+          name: updatedPendingUser.name,
+          status: "pending_admin_approval",
+          admin_email: updatedPendingUser.admin_email,
+        },
+      }
+    } else {
+      // Auto-approve if no admin email specified
+      const approvedUser = await this.approvePendingUser(updatedPendingUser.id)
+
+      return {
+        verified: true,
+        user: {
+          email: approvedUser.email,
+          name: approvedUser.name,
+          status: "approved",
+          id: approvedUser.id,
+        },
+      }
+    }
   }
 
-  static async approvePendingUser(pendingUserId: string): Promise<boolean> {
+  static async approvePendingUser(pendingUserId: string): Promise<any> {
+    if (!sql) {
+      throw new Error("Database not available")
+    }
+
     // Get pending user
     const [pendingUser] = await sql`
       SELECT * FROM pending_users
       WHERE id = ${pendingUserId}
       AND otp_verified = true
       AND admin_approved = false
+      AND expires_at > NOW()
     `
 
     if (!pendingUser) {
-      return false
+      throw new Error("Pending user not found, already approved, or expired")
     }
 
-    // Create actual user
-    const [user] = await sql`
-      INSERT INTO users (
-        email, name, password_hash, role, is_active
-      ) VALUES (
-        ${pendingUser.email}, ${pendingUser.name}, ${pendingUser.password_hash}, ${pendingUser.role}, true
-      )
-      RETURNING *
-    `
+    try {
+      // Start transaction by creating the user first
+      const [user] = await sql`
+        INSERT INTO users (
+          email, name, password_hash, role, is_active
+        ) VALUES (
+          ${pendingUser.email}, 
+          ${pendingUser.name}, 
+          ${pendingUser.password_hash}, 
+          ${pendingUser.role}, 
+          true
+        )
+        RETURNING id, email, name, role, is_active, created_at
+      `
 
-    // Mark pending user as approved
-    await sql`
-      UPDATE pending_users
-      SET admin_approved = true
-      WHERE id = ${pendingUserId}
-    `
+      // Mark pending user as approved
+      await sql`
+        UPDATE pending_users
+        SET admin_approved = true
+        WHERE id = ${pendingUserId}
+      `
 
-    // Send welcome email
-    await EmailService.sendWelcomeEmail(user.email, user.name)
+      // Send welcome email
+      await EmailService.sendWelcomeEmail(user.email, user.name)
 
-    return true
+      return user
+    } catch (error) {
+      console.error("Error approving pending user:", error)
+      throw new Error("Failed to approve user")
+    }
   }
 
   static async getPendingUserByEmail(email: string): Promise<PendingUser | null> {
+    if (!sql) {
+      return null
+    }
+
     const [pendingUser] = await sql`
       SELECT * FROM pending_users
-      WHERE email = ${email}
+      WHERE email = ${email} AND expires_at > NOW()
+      ORDER BY created_at DESC
+      LIMIT 1
     `
 
     return pendingUser || null
   }
 
   static async getPendingUserById(id: string): Promise<PendingUser | null> {
+    if (!sql) {
+      return null
+    }
+
     const [pendingUser] = await sql`
       SELECT * FROM pending_users
       WHERE id = ${id}
@@ -154,7 +213,37 @@ export class PendingUserService {
     return pendingUser || null
   }
 
+  static async resendOTP(email: string): Promise<string> {
+    if (!sql) {
+      throw new Error("Database not available")
+    }
+
+    // Check if there's a valid pending user
+    const [pendingUser] = await sql`
+      SELECT * FROM pending_users
+      WHERE email = ${email} 
+      AND expires_at > NOW()
+      AND otp_verified = false
+    `
+
+    if (!pendingUser) {
+      throw new Error("No pending registration found for this email")
+    }
+
+    // Generate new OTP
+    const otpCode = await OTPService.createOTP(email, "SIGNUP")
+
+    // Send OTP via email
+    await EmailService.sendOTP(email, otpCode, "Account Verification")
+
+    return otpCode
+  }
+
   static async cleanupExpiredPendingUsers(): Promise<void> {
+    if (!sql) {
+      return
+    }
+
     await sql`
       DELETE FROM pending_users
       WHERE expires_at < NOW()
