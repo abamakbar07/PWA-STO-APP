@@ -10,7 +10,6 @@ import { Progress } from "@/components/ui/progress"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Upload, FileText, BarChart3, Users, Package, CheckCircle, Clock, TrendingUp, Download } from "lucide-react"
 import { Navigation } from "@/components/navigation"
-import { EmailStatusCard } from "./email-status"
 
 interface DashboardStats {
   totalForms: number
@@ -149,14 +148,6 @@ export default function Dashboard() {
             </CardContent>
           </Card>
         </div>
-
-        {/* System Status for Super Users */}
-        {userRole === "SUPER_USER" && (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-            <EmailStatusCard />
-            {/* Add more system status cards here in the future */}
-          </div>
-        )}
 
         {/* Progress Overview */}
         <Card className="mb-8">
