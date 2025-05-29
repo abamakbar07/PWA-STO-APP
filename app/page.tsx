@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation"
 import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Package, ArrowRight, Users, FileText, BarChart3 } from "lucide-react"
+import { Package, ArrowRight, Users, FileText, BarChart3, LogIn, UserPlus } from "lucide-react"
 
 export default function Home() {
   const { data: session, status } = useSession()
@@ -80,10 +80,22 @@ export default function Home() {
           <Package className="h-16 w-16 mx-auto mb-6 text-blue-600" />
           <h1 className="text-4xl font-bold text-gray-900 mb-4">STO Manager</h1>
           <p className="text-xl text-gray-600 mb-8">Progressive Web Application for Stock Take Operations</p>
-          <Button size="lg" onClick={() => router.push("/auth/signin")} className="text-lg px-8 py-3">
-            Sign In to Continue
-            <ArrowRight className="ml-2 h-5 w-5" />
-          </Button>
+
+          <div className="flex flex-col sm:flex-row gap-4 justify-center mb-16">
+            <Button size="lg" onClick={() => router.push("/auth/signin")} className="text-lg px-8 py-3">
+              <LogIn className="mr-2 h-5 w-5" />
+              Sign In
+            </Button>
+            <Button
+              size="lg"
+              onClick={() => router.push("/auth/signup")}
+              variant="outline"
+              className="text-lg px-8 py-3"
+            >
+              <UserPlus className="mr-2 h-5 w-5" />
+              Sign Up
+            </Button>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-4xl mx-auto mt-16">

@@ -12,7 +12,20 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Badge } from "@/components/ui/badge"
-import { Package, Menu, X, Home, Upload, FileText, BarChart3, Users, Settings, LogOut, User } from "lucide-react"
+import {
+  Package,
+  Menu,
+  X,
+  Home,
+  Upload,
+  FileText,
+  BarChart3,
+  Users,
+  Settings,
+  LogOut,
+  User,
+  UserPlus,
+} from "lucide-react"
 
 export function Navigation() {
   const { data: session } = useSession()
@@ -28,6 +41,7 @@ export function Navigation() {
       ? [
           { name: "Upload SOH", href: "/upload", icon: Upload },
           { name: "User Management", href: "/users", icon: Users },
+          { name: "Pending Users", href: "/users/pending", icon: UserPlus },
         ]
       : []),
     { name: "Forms", href: "/forms", icon: FileText },
