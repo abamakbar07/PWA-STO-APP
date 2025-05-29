@@ -58,10 +58,16 @@ export class UserService {
 
   static async getUserById(id: string): Promise<User | null> {
     try {
+      // Validate UUID format
+      if (!id || id.length < 36) {
+        console.warn("Invalid UUID format:", id)
+        return null
+      }
+
       const [user] = await sql`
         SELECT id, email, name, role, is_active, created_at, updated_at, last_login
         FROM users 
-        WHERE id = ${id} AND is_active = true
+        WHERE id = ${id}::uuid AND is_active = true
       `
 
       return (user as User) || null
@@ -73,10 +79,15 @@ export class UserService {
 
   static async deleteUser(id: string): Promise<void> {
     try {
+      // Validate UUID format
+      if (!id || id.length < 36) {
+        throw new Error("Invalid user ID format")
+      }
+
       await sql`
         UPDATE users 
         SET is_active = false, updated_at = NOW() 
-        WHERE id = ${id}
+        WHERE id = ${id}::uuid
       `
     } catch (error) {
       throw new Error("Failed to delete user")

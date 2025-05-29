@@ -14,17 +14,17 @@ export const authOptions: NextAuthOptions = {
           return null
         }
 
-        // Demo users
+        // Demo users with proper UUIDs
         const users = [
           {
-            id: "1",
+            id: "550e8400-e29b-41d4-a716-446655440001",
             email: "super@sto.com",
             name: "Super User",
             role: "SUPER_USER",
             password: "super123",
           },
           {
-            id: "2",
+            id: "550e8400-e29b-41d4-a716-446655440002",
             email: "admin@sto.com",
             name: "Admin User",
             role: "ADMIN_USER",

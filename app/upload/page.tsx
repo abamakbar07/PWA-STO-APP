@@ -244,6 +244,36 @@ export default function UploadPage() {
     }
   }
 
+  const downloadSampleCSV = async () => {
+    try {
+      const response = await fetch("/api/sample-csv")
+      if (response.ok) {
+        const blob = await response.blob()
+        const url = window.URL.createObjectURL(blob)
+        const a = document.createElement("a")
+        a.href = url
+        a.download = "sample-soh-data.csv"
+        document.body.appendChild(a)
+        a.click()
+        window.URL.revokeObjectURL(url)
+        document.body.removeChild(a)
+
+        toast({
+          title: "Sample downloaded",
+          description: "Sample CSV file has been downloaded successfully",
+        })
+      } else {
+        throw new Error("Failed to download sample")
+      }
+    } catch (error) {
+      toast({
+        title: "Download failed",
+        description: "Failed to download sample CSV file",
+        variant: "destructive",
+      })
+    }
+  }
+
   // Redirect if not super user
   if (userRole !== "SUPER_USER") {
     router.push("/dashboard")
@@ -434,6 +464,15 @@ export default function UploadPage() {
                       <li>• Dates must be in valid format</li>
                       <li>• Duplicate FormNo entries are allowed</li>
                     </ul>
+                  </div>
+
+                  <div>
+                    <h4 className="font-medium mb-2">Sample Data</h4>
+                    <p className="text-sm text-gray-600 mb-2">Download a sample CSV file to see the expected format</p>
+                    <Button variant="outline" size="sm" onClick={downloadSampleCSV}>
+                      <Download className="h-4 w-4 mr-2" />
+                      Download Sample CSV
+                    </Button>
                   </div>
                 </CardContent>
               </Card>

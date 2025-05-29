@@ -206,6 +206,11 @@ async function insertSOHRecord(record: any, uploadedBy: string): Promise<void> {
     throw new Error("Database not available")
   }
 
+  // Ensure uploadedBy is a valid UUID
+  if (!uploadedBy || uploadedBy.length < 36) {
+    throw new Error("Invalid user ID format")
+  }
+
   await sql`
     INSERT INTO soh_data (
       form_no, storerkey, sku, loc, lot, item_id,
@@ -225,7 +230,7 @@ async function insertSOHRecord(record: any, uploadedBy: string): Promise<void> {
       ${record.Received_Date ? new Date(record.Received_Date) : null}, 
       ${record.HUID || null}, ${record.Owner_Id || null}, 
       ${Number(record.stdcube) || null},
-      ${uploadedBy}
+      ${uploadedBy}::uuid
     )
   `
 }
@@ -268,6 +273,13 @@ export async function POST(request: NextRequest) {
     const uploadId = `upload_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
     const userId = (session.user as any).id
 
+    // Validate user ID format
+    if (!userId || typeof userId !== "string") {
+      return createErrorResponse("Invalid user session", 401, "INVALID_SESSION")
+    }
+
+    console.log("User ID for upload:", userId) // Debug log
+
     let records: any[] = []
 
     try {
@@ -301,13 +313,18 @@ export async function POST(request: NextRequest) {
     }
 
     // Create upload log entry
-    await sql`
-      INSERT INTO upload_logs (
-        id, file_name, file_size, total_records, uploaded_by, status
-      ) VALUES (
-        ${uploadId}, ${file.name}, ${file.size}, ${records.length}, ${userId}, 'processing'
-      )
-    `
+    try {
+      await sql`
+        INSERT INTO upload_logs (
+          id, file_name, file_size, total_records, uploaded_by, status
+        ) VALUES (
+          ${uploadId}, ${file.name}, ${file.size}, ${records.length}, ${userId}::uuid, 'processing'
+        )
+      `
+    } catch (logError) {
+      console.error("Failed to create upload log:", logError)
+      return createErrorResponse("Failed to initialize upload tracking", 500, "LOG_CREATION_FAILED")
+    }
 
     for (let i = 0; i < records.length; i++) {
       const record = records[i]
@@ -353,7 +370,7 @@ export async function POST(request: NextRequest) {
       try {
         await sql`
           INSERT INTO form_progress (form_no, status, updated_by)
-          VALUES (${formNo}, 'PRINTED', ${userId})
+          VALUES (${formNo}, 'PRINTED', ${userId}::uuid)
           ON CONFLICT (form_no) DO NOTHING
         `
       } catch (error) {

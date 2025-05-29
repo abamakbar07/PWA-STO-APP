@@ -29,7 +29,7 @@ export async function GET(request: NextRequest, { params }: { params: { uploadId
         created_at,
         completed_at
       FROM upload_logs 
-      WHERE id = ${uploadId} AND uploaded_by = ${(session.user as any).id}
+      WHERE id = ${uploadId} AND uploaded_by = ${(session.user as any).id}::uuid
     `
 
     if (!uploadLog) {
