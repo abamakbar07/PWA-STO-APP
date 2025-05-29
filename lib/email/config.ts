@@ -36,7 +36,7 @@ export function getEmailConfig(): EmailConfig {
 export function createTransporter() {
   const config = getEmailConfig()
 
-  const transporter = nodemailer.createTransporter({
+  const transporter = nodemailer.createTransport({
     host: config.host,
     port: config.port,
     secure: config.secure,
